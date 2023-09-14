@@ -10,11 +10,12 @@
 
 void minPQ_Init(struct minPQ* _minPQ_DATA){
     _minPQ_DATA->heapNodes = (struct Element*)calloc(6, sizeof(struct Element));
-    _minPQ_DATA->heapNodes[0].element = -1;
-    _minPQ_DATA->heapNodes[0].key = -1;
+    _minPQ_DATA->heapNodes[0].element = -1; //第0格不用
+    _minPQ_DATA->heapNodes[0].key = -1; //第0格不用
+    
+    _minPQ_DATA->elementIndexArr = (int*)calloc(6, sizeof(int));
+    _minPQ_DATA->elementIndexArr[0] = -1; //第0格不用 
 
-    _minPQ_DATA->minIndex = -1;
-    _minPQ_DATA->minKey = -1;
     _minPQ_DATA->size = 6;
     _minPQ_DATA->tail = 0;
 }
@@ -65,8 +66,11 @@ void minPQ_minHeapify(struct minPQ* _minPQ_DATA, int _currentNodeIndex){
         }
         // 如果current不是最小的，則跟當前最小的交換
         if(smallestNodeIndex != currentNodeIndex){
+            int smallestElement = _minPQ_DATA->heapNodes[smallestNodeIndex].element;
+            int currentElement = _minPQ_DATA->heapNodes[currentNodeIndex].element;
             swap(&(_minPQ_DATA->heapNodes[smallestNodeIndex].key), &(_minPQ_DATA->heapNodes[currentNodeIndex].key));
             swap(&(_minPQ_DATA->heapNodes[smallestNodeIndex].element), &(_minPQ_DATA->heapNodes[currentNodeIndex].element));
+            swap(&(_minPQ_DATA->elementIndexArr[smallestElement]), &(_minPQ_DATA->elementIndexArr[currentElement]));
             currentNodeIndex = smallestNodeIndex;
         }
         else{ //如果current是最小的，則break
@@ -87,17 +91,25 @@ void minPQ_Insert(struct minPQ* _minPQ_DATA, int _newElement, int _newKey){
 
         struct Element* bigElementArr = (struct Element*)calloc((_minPQ_DATA->size ) * 2, sizeof(struct Element));
         memcpy(bigElementArr, _minPQ_DATA->heapNodes, sizeof(struct Element) * _minPQ_DATA->size);
-        _minPQ_DATA->size = _minPQ_DATA->size * 2;
         free(_minPQ_DATA->heapNodes);
         _minPQ_DATA->heapNodes = bigElementArr;
+
+        int* bigElementIndexArr = (int*)calloc((_minPQ_DATA->size) * 2, sizeof(int));
+        memcpy(bigElementIndexArr, _minPQ_DATA->elementIndexArr, sizeof(int) * _minPQ_DATA->size);
+        free(_minPQ_DATA->elementIndexArr);
+        _minPQ_DATA->elementIndexArr = bigElementIndexArr;
+
+        _minPQ_DATA->size = _minPQ_DATA->size * 2;
     }
+    // 在尾端塞入資料
     _minPQ_DATA->tail ++;
     _minPQ_DATA->heapNodes[_minPQ_DATA->tail].element = _newElement;
     _minPQ_DATA->heapNodes[_minPQ_DATA->tail].key = _newKey;
-    
+    _minPQ_DATA->elementIndexArr[_minPQ_DATA->tail] = _minPQ_DATA->tail;
+
     #ifdef _DEBUG_
-    printf("minPQ_DATA->heapNodes[%d] => element = %d, key = %d\n", _minPQ_DATA->tail, _minPQ_DATA->heapNodes[_minPQ_DATA->tail].element, _minPQ_DATA->heapNodes[_minPQ_DATA->tail].key);
-    printf("heapify...\n");
+    printf("minPQ_DATA->heapNodes[%d] => element = %d, key = %d, index = %d\n", _minPQ_DATA->tail, _minPQ_DATA->heapNodes[_minPQ_DATA->tail].element, _minPQ_DATA->heapNodes[_minPQ_DATA->tail].key, _minPQ_DATA->elementIndexArr[_minPQ_DATA->tail]);
+    // printf("heapify...\n");
     #endif
     
     // 處理insertion case的heapify，從tail往root做heapify
@@ -106,12 +118,24 @@ void minPQ_Insert(struct minPQ* _minPQ_DATA, int _newElement, int _newKey){
     int parentNodeIndex;
     while(1){
         parentNodeIndex = currentNodeIndex / 2;
-        #ifdef _DEBUG_
-        printf("currentNodeIndex = %d, parentNodeIndex = %d\n", currentNodeIndex, parentNodeIndex);
-        #endif
         if(parentNodeIndex >= 1 && _minPQ_DATA->heapNodes[currentNodeIndex].key < _minPQ_DATA->heapNodes[parentNodeIndex].key){
+            int currentElement = _minPQ_DATA->heapNodes[currentNodeIndex].element;
+            int parentElement = _minPQ_DATA->heapNodes[parentNodeIndex].element;
+
+            #ifdef _DEBUG_
+            printf("current = {element = %d, key = %d, index = %d}, parent = {element = %d, key = %d, index = %d}, swap both!\n", currentElement, _minPQ_DATA->heapNodes[currentNodeIndex].key, _minPQ_DATA->elementIndexArr[currentElement], parentElement, _minPQ_DATA->heapNodes[parentNodeIndex].key, _minPQ_DATA->elementIndexArr[parentElement]);
+            #endif
+
+            // 交換element與key
             swap(&(_minPQ_DATA->heapNodes[currentNodeIndex].element), &(_minPQ_DATA->heapNodes[parentNodeIndex].element));
             swap(&(_minPQ_DATA->heapNodes[currentNodeIndex].key), &(_minPQ_DATA->heapNodes[parentNodeIndex].key));
+            // 交換element的index
+            swap(&(_minPQ_DATA->elementIndexArr[currentElement]), &(_minPQ_DATA->elementIndexArr[parentElement]));
+
+            #ifdef _DEBUG_
+            printf("current = {element = %d, key = %d, index = %d}, parent = {element = %d, key = %d, index = %d}, swap finished\n", _minPQ_DATA->heapNodes[currentNodeIndex].element, _minPQ_DATA->heapNodes[currentNodeIndex].key, _minPQ_DATA->elementIndexArr[currentElement], _minPQ_DATA->heapNodes[parentNodeIndex].element, _minPQ_DATA->heapNodes[parentNodeIndex].key, _minPQ_DATA->elementIndexArr[parentElement]);
+            #endif
+            // current往heap上移一層
             currentNodeIndex = parentNodeIndex;
         }
         else{
@@ -120,3 +144,31 @@ void minPQ_Insert(struct minPQ* _minPQ_DATA, int _newElement, int _newKey){
     }
 }
 
+void minPQ_increaseKey(struct minPQ* _minPQ_DATA, int _element, int _increaseVal){
+    // 取得element在min heap中的index
+    int index = _minPQ_DATA->elementIndexArr[_element];
+    // 把key值增加_increaseVal
+    _minPQ_DATA->heapNodes[index].key = _minPQ_DATA->heapNodes[index].key + _increaseVal;
+    minPQ_minHeapify(_minPQ_DATA, index);
+}
+
+/**
+ * @brief return位於min heap頂端的element
+*/
+int minPQ_minValueElement(struct minPQ* _minPQ_DATA){
+    return _minPQ_DATA->heapNodes[1].element;
+}
+
+/**
+ * @brief return位於min heap頂端的Key
+*/
+int minPQ_minValue(struct minPQ* _minPQ_DATA){
+    return _minPQ_DATA->heapNodes[1].key;
+}
+
+/**
+ * @brief return Min heap中總共有幾個element
+*/
+int minPQ_size(struct minPQ* _minPQ_DATA){
+    return _minPQ_DATA->tail;
+}

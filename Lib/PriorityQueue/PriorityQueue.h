@@ -18,8 +18,7 @@ struct Element{
 
 struct minPQ{
     struct Element* heapNodes;
-    int minIndex;
-    int minKey;
+    int* elementIndexArr;
     int tail;
     int size;
 };
@@ -34,7 +33,7 @@ void swap(int* Val1, int* Val2);
 void minPQ_minHeapify(struct minPQ* _minPQ_DATA, int _currentNodeIndex);
 void minPQ_Insert(struct minPQ* _minPQ_DATA, int _newElement, int _newKey);
 // 寫increaseKey
-// void minPQ_increaseKey(struct minPQ_DATA* _PQ_data, int _element, int _increaseVal);
-// int minPQ_minValueIndex(struct minPQ_DATA* _PQ_data);
-// int minPQ_minValue(struct minPQ_DATA* _PQ_data);
-// int minPQ_size(struct minPQ_DATA* _PQ_data);
+void minPQ_increaseKey(struct minPQ* _minPQ_DATA, int _element, int _increaseVal);
+int minPQ_minValueElement(struct minPQ* _minPQ_DATA);
+int minPQ_minValue(struct minPQ* _minPQ_DATA);
+int minPQ_size(struct minPQ* _minPQ_DATA);
