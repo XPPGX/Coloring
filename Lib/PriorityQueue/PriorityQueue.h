@@ -1,6 +1,6 @@
 /**
  * @author XPPGX
- * @brief This min priority queue is made by binary heap and data if in the form of vector
+ * @brief This min priority queue is made by binary heap
  * @date 2023/09/07
 */
 #ifndef COMMON
