@@ -32,7 +32,6 @@ int minPQ_IsFull(struct minPQ* _minPQ_DATA);
 void swap(int* Val1, int* Val2);
 void minPQ_minHeapify(struct minPQ* _minPQ_DATA, int _currentNodeIndex);
 void minPQ_Insert(struct minPQ* _minPQ_DATA, int _newElement, int _newKey);
-// 寫increaseKey
 void minPQ_increaseKey(struct minPQ* _minPQ_DATA, int _element, int _increaseVal);
 int minPQ_minValueElement(struct minPQ* _minPQ_DATA);
 int minPQ_minValue(struct minPQ* _minPQ_DATA);

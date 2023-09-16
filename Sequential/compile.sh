@@ -1,0 +1,1 @@
+gcc main.c ../Lib/PriorityQueue/PriorityQueue.c ../Lib/CSR/CSR.c ../Lib/AdjList/AdjList.c ../Lib/vVector/vVector.c ../Lib/FileReader/FileReader.c colorMethod.c -o a

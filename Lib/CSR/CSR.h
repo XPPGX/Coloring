@@ -20,8 +20,8 @@
 struct CSR{
     int* csrV;
     int* csrE;
-    int csrVSize;
-    int csrESize;
+    int csrVSize; //結尾會多一個格子，放總共的edge數，當作最後的offset。
+    int csrESize; //如果是無向圖，csrESize就是原本dataset的兩倍。
     int startAtZero;
 };
 
