@@ -23,6 +23,10 @@
 #include "../FileReader/FileReader.h"
 #endif
 
+#ifndef QQueue
+#define QQueue
+#include "../qQueue/qQueue.h"
+#endif
 struct adjList{
     struct vVector* neighbors;
 };
@@ -30,9 +34,10 @@ struct adjList{
 struct Graph{
     int nodeNum;
     int edgeNum;
-    int* nodeDegrees;
     int startAtZero;
+    int* nodeDegrees;
     struct adjList* vertices;
+    struct qQueue* degreeOneQueue;
 };
 
 struct Graph* buildGraph(char* _datasetPath);

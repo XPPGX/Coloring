@@ -49,13 +49,57 @@ struct CSR* createCSR(struct Graph* _adjlist){
     csr->csrE = CSR_E;
     csr->csrVSize = tempNodeNum;
     csr->csrESize = _adjlist->edgeNum * 2;
+    csr->csrNodesDegree = _adjlist->nodeDegrees;
     csr->startAtZero = _adjlist->startAtZero;
+    csr->degreeOneNodesQ = _adjlist->degreeOneQueue;
+    csr->foldedDegreeOneCount = 0;
     printf("csr->csrVSize = %d\n", csr->csrVSize);
     printf("csr->csrESize = %d\n", csr->csrESize);
+    printf("csr->degreeOneNum = %d\n", csr->degreeOneNodesQ->rear + 1);
     printf("csr->startAtZero = %d\n", csr->startAtZero);
     printf("[Success] CreateCSR finish\n");
     printf("==============================\n");
     return csr;
+}
+
+void swap(int* _val1, int* _val2){
+    int temp = *_val1;
+    *_val1 = *_val2;
+    *_val2 = temp;
+}
+
+void degreeOneFolding(struct CSR* _csr){
+    struct qQueue* d1Q = _csr->degreeOneNodesQ;
+
+    int d1Node = -1;
+
+    int hubNode = -1;
+    int currentNeighbor = -1;
+
+    while(!qIsEmpty(d1Q)){
+        d1Node = qPopFront(d1Q);
+        hubNode = _csr->csrE[_csr->csrV[d1Node]];
+
+        #ifdef _DEBUG_
+        printf("%d, linking to %d\n", d1Node, hubNode);
+        #endif
+        // 找hubNode的neighbor中，d1Node所在的index，並把d1Node跟hubNode的當前第一個鄰居交換。
+        // hubNode的offset + 1，因為hubNode拔掉一個neighbor。
+        for(int hubNodeNeighborIndex = 0 ; hubNodeNeighborIndex < _csr->csrNodesDegree[hubNode] ; hubNodeNeighborIndex ++){
+            currentNeighbor = _csr->csrE[_csr->csrV[hubNode] + hubNodeNeighborIndex];
+            if(currentNeighbor == d1Node){
+                swap(&(_csr->csrE[_csr->csrV[hubNode] + hubNodeNeighborIndex]), &(_csr->csrE[_csr->csrV[hubNode]]));
+                break;
+            }
+        }
+        // hubNode的offset + 1
+        _csr->csrV[hubNode] ++;
+        // hubNode的degree - 1
+        _csr->csrNodesDegree[hubNode] --;
+        // 計數有多少degreeOne
+        _csr->foldedDegreeOneCount ++;
+    }
+    printf("Folded Degree One Count = %d\n", csr->foldedDegreeOneCount);
 }
 
 void showCSR(struct CSR* csr){

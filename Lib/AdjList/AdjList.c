@@ -74,13 +74,24 @@ struct Graph* buildGraph(char* _datasetPath){
         vAppend(graph->vertices[val2].neighbors, val1);
         graph->nodeDegrees[val2] ++;
     }
+    
+    //初始化degreeOneQueue
+    graph->degreeOneQueue = InitqQueue();
 
+    //對每個node的neighbors根據degree進行排列 and 收集degreeOne
     if(graph->startAtZero == 1){ //nodeID從0開始
         for(int nodeID = 0 ; nodeID < graph->nodeNum ; nodeID ++){
             struct vVector* neighbors = graph->vertices[nodeID].neighbors;
             int left = 0;
             int right = graph->vertices[nodeID].neighbors->tail;
-            quicksort(neighbors, graph->nodeDegrees, left, right);
+
+            // 如果nodeID的degree == 1，則放入degreeOneQueue，否則根據degree對nodeID的neighbor進行排序
+            if(graph->nodeDegrees[nodeID] == 1){
+                qPushBack(graph->degreeOneQueue, nodeID);
+            }
+            else{
+                quicksort(neighbors, graph->nodeDegrees, left, right);
+            }
         }
     }
     else{ //nodeID從1開始
@@ -92,7 +103,14 @@ struct Graph* buildGraph(char* _datasetPath){
             struct vVector* neighbors = graph->vertices[nodeID].neighbors;
             int left = 0;
             int right = graph->vertices[nodeID].neighbors->tail;
-            quicksort(neighbors, graph->nodeDegrees, left, right);
+
+            // 如果nodeID的degree == 1，則放入degreeOneQueue，否則根據degree對nodeID的neighbor進行排序
+            if(graph->nodeDegrees[nodeID] == 1){
+                qPushBack(graph->degreeOneQueue, nodeID);
+            }
+            else{
+                quicksort(neighbors, graph->nodeDegrees, left, right);
+            }
         }
     }
 
@@ -101,6 +119,7 @@ struct Graph* buildGraph(char* _datasetPath){
     printf("dataset = %s\n", _datasetPath);
     printf("nodeNum = %d\n", graph->nodeNum);
     printf("edgeNum = %d\n", graph->edgeNum);
+    printf("degreeOneNum = %d\n", graph->degreeOneQueue->rear + 1);
     switch(graph->startAtZero){
         case 0:
             printf("graph start with 1\n");
@@ -196,4 +215,10 @@ void showAdjList(struct Graph* _graph){
             printf("}\n");
         }
     }
+
+    printf("Degree one queue : {");
+    while(!qIsEmpty(_graph->degreeOneQueue)){
+        printf("%d, ", qPopFront(_graph->degreeOneQueue));
+    }
+    printf("}\n");
 }

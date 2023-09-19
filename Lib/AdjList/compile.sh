@@ -1,1 +1,1 @@
-gcc example.c AdjList.c ../vVector/vVector.c ../FileReader/FileReader.c -o a
+gcc example.c AdjList.c ../vVector/vVector.c ../FileReader/FileReader.c ../qQueue/qQueue.c -o a
