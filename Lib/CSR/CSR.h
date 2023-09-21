@@ -23,11 +23,13 @@
 #endif
 
 struct CSR{
-    int* csrV;
-    int* csrE;
+    int* csrV; //O(|V|)
+    int* oriCsrV; //O(|V|)
+    int* csrE; //O(|E|)
     int csrVSize; //結尾會多一個格子，放總共的edge數，當作最後的offset。
     int csrESize; //如果是無向圖，csrESize就是原本dataset的兩倍。
-    int* csrNodesDegree; //紀錄csr的各個node的degree。
+    int* csrNodesDegree; //O(|V|), 紀錄csr的各個node的degree。
+    int* oriCsrNodesDegree; //O(|V|), 紀錄原始csr的各個node的degree。
     struct qQueue* degreeOneNodesQ; //紀錄誰是degreeOne的Queue。
     int foldedDegreeOneCount;
     int startAtZero;

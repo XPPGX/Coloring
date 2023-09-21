@@ -43,13 +43,23 @@ struct CSR* createCSR(struct Graph* _adjlist){
     }
     // printf("nodeID = %d, tempNodeNum = %d, indexCount = %d\n", nodeID, tempNodeNum, indexCount);
     CSR_V[nodeID] = _adjlist->edgeNum * 2;
-
+    //對csr結構賦值
     struct CSR* csr = (struct CSR*)malloc(sizeof(struct CSR));
     csr->csrV = CSR_V;
+
+    
+
     csr->csrE = CSR_E;
     csr->csrVSize = tempNodeNum;
     csr->csrESize = _adjlist->edgeNum * 2;
     csr->csrNodesDegree = _adjlist->nodeDegrees;
+    
+    csr->oriCsrNodesDegree = (int*)malloc(sizeof(int) * csr->csrVSize);
+    memcpy(csr->oriCsrNodesDegree, csr->csrNodesDegree, sizeof(int) * csr->csrVSize);
+
+    csr->oriCsrV = (int*)malloc(sizeof(int) * csr->csrVSize);
+    memcpy(csr->oriCsrV, csr->csrV, sizeof(int) * csr->csrVSize);
+
     csr->startAtZero = _adjlist->startAtZero;
     csr->degreeOneNodesQ = _adjlist->degreeOneQueue;
     csr->foldedDegreeOneCount = 0;
@@ -92,14 +102,26 @@ void degreeOneFolding(struct CSR* _csr){
                 break;
             }
         }
+        // d1Node的offset不用 + 1，因為d1Node之後還要藉由hubNode去塗色
+        _csr->csrV[d1Node] ++;
+        // d1Node的degree - 1
+        _csr->csrNodesDegree[d1Node] --;
+
         // hubNode的offset + 1
         _csr->csrV[hubNode] ++;
         // hubNode的degree - 1
         _csr->csrNodesDegree[hubNode] --;
         // 計數有多少degreeOne
         _csr->foldedDegreeOneCount ++;
+
+
+        // 如果d1Node需要找 hubNode，則
+        // _csr->csrV[d1Node] --; 的索引位置就是hubNode
     }
-    printf("Folded Degree One Count = %d\n", csr->foldedDegreeOneCount);
+
+    #ifdef _DEBUG_
+    printf("Folded Degree One Count = %d\n", _csr->foldedDegreeOneCount);
+    #endif
 }
 
 void showCSR(struct CSR* csr){
