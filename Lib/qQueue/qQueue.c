@@ -30,13 +30,14 @@ void qPushBack(struct qQueue* _queue, int _val){
 
         _queue->size = _queue->size * 2;
         int* newSpace = (int*)malloc(sizeof(int) * _queue->size);
-        memcpy(newSpace, (_queue->dataArr) + _queue->front,  sizeof(int) * (_queue->rear - _queue->front + 1));
+        memcpy(newSpace, _queue->dataArr,  sizeof(int) * (_queue->rear + 1));
         free(_queue->dataArr);
         _queue->dataArr = newSpace;
 
         //re-assign index
-        _queue->rear = _queue->rear - _queue->front;
-        _queue->front = 0;
+        // _queue->rear = _queue->rear - _queue->front;
+        // _queue->front = 0;
+        
     }
     _queue->rear++;
     _queue->dataArr[_queue->rear] = _val;
