@@ -31,6 +31,15 @@ int main(int argc, char* argv[]){
     char* datasetPath = argv[1];
     struct Graph* adjList = buildGraph(datasetPath);
     struct CSR* csr = createCSR(adjList);
+    struct colorInfo* result = (struct colorInfo*)malloc(sizeof(struct colorInfo));
     // showCSR(csr);
-    Firstfit(csr);
+    // degreeOneFolding(csr);
+
+    // Firstfit(csr, result);
+    // checkAns(csr, result, "FF");
+    // standardError(result);
+
+    FFDP(csr, result);
+    // checkAns(csr, result, "FF_D_P");
+    // standardError(result);
 }
