@@ -29,12 +29,15 @@ int minPQ_IsFull(struct minPQ* _minPQ_DATA){
     }
 }
 
-void swap(int* Val1, int* Val2){
-    *Val1 = *Val1 ^ *Val2;
+void minPQ_swap(int* Val1, int* Val2){
+    int temp = *Val1;
+    *Val1 = *Val2;
+    *Val2 = temp;
+    // *Val1 = *Val1 ^ *Val2;
 
-    *Val2 = *Val1 ^ *Val2;
+    // *Val2 = *Val1 ^ *Val2;
     
-    *Val1 = *Val1 ^ *Val2;
+    // *Val1 = *Val1 ^ *Val2;
 }
 
 /**
@@ -68,9 +71,9 @@ void minPQ_minHeapify(struct minPQ* _minPQ_DATA, int _currentNodeIndex){
         if(smallestNodeIndex != currentNodeIndex){
             int smallestElement = _minPQ_DATA->heapNodes[smallestNodeIndex].element;
             int currentElement = _minPQ_DATA->heapNodes[currentNodeIndex].element;
-            swap(&(_minPQ_DATA->heapNodes[smallestNodeIndex].key), &(_minPQ_DATA->heapNodes[currentNodeIndex].key));
-            swap(&(_minPQ_DATA->heapNodes[smallestNodeIndex].element), &(_minPQ_DATA->heapNodes[currentNodeIndex].element));
-            swap(&(_minPQ_DATA->elementIndexArr[smallestElement]), &(_minPQ_DATA->elementIndexArr[currentElement]));
+            minPQ_swap(&(_minPQ_DATA->heapNodes[smallestNodeIndex].key), &(_minPQ_DATA->heapNodes[currentNodeIndex].key));
+            minPQ_swap(&(_minPQ_DATA->heapNodes[smallestNodeIndex].element), &(_minPQ_DATA->heapNodes[currentNodeIndex].element));
+            minPQ_swap(&(_minPQ_DATA->elementIndexArr[smallestElement]), &(_minPQ_DATA->elementIndexArr[currentElement]));
             currentNodeIndex = smallestNodeIndex;
         }
         else{ //如果current是最小的，則break
@@ -127,10 +130,10 @@ void minPQ_Insert(struct minPQ* _minPQ_DATA, int _newElement, int _newKey){
             #endif
 
             // 交換element與key
-            swap(&(_minPQ_DATA->heapNodes[currentNodeIndex].element), &(_minPQ_DATA->heapNodes[parentNodeIndex].element));
-            swap(&(_minPQ_DATA->heapNodes[currentNodeIndex].key), &(_minPQ_DATA->heapNodes[parentNodeIndex].key));
+            minPQ_swap(&(_minPQ_DATA->heapNodes[currentNodeIndex].element), &(_minPQ_DATA->heapNodes[parentNodeIndex].element));
+            minPQ_swap(&(_minPQ_DATA->heapNodes[currentNodeIndex].key), &(_minPQ_DATA->heapNodes[parentNodeIndex].key));
             // 交換element的index
-            swap(&(_minPQ_DATA->elementIndexArr[currentElement]), &(_minPQ_DATA->elementIndexArr[parentElement]));
+            minPQ_swap(&(_minPQ_DATA->elementIndexArr[currentElement]), &(_minPQ_DATA->elementIndexArr[parentElement]));
 
             #ifdef _DEBUG_
             printf("current = {element = %d, key = %d, index = %d}, parent = {element = %d, key = %d, index = %d}, swap finished\n", _minPQ_DATA->heapNodes[currentNodeIndex].element, _minPQ_DATA->heapNodes[currentNodeIndex].key, _minPQ_DATA->elementIndexArr[currentElement], _minPQ_DATA->heapNodes[parentNodeIndex].element, _minPQ_DATA->heapNodes[parentNodeIndex].key, _minPQ_DATA->elementIndexArr[parentElement]);
