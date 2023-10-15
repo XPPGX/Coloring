@@ -129,6 +129,7 @@ struct Graph* buildGraph(char* _datasetPath){
             break;
     }
     printf("==============================\n");
+    fclose(fptr);
     return graph;
 }
 
