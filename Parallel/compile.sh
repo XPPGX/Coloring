@@ -1,0 +1,1 @@
+nvcc ECL-GC.cu ../Lib/qQueue/qQueue.c ../Lib/CSR/CSR.c ../Lib/tTime/tTime.c ../Lib/AdjList/AdjList.c ../Lib/vVector/vVector.c ../Lib/FileReader/FileReader.c  -rdc=true -o a
