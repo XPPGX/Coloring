@@ -80,6 +80,28 @@ void Firstfit(struct CSR* _csr, struct colorInfo* _result){
     #endif //RESULT
 }
 
+void BFS_FF(struct CSR* _csr, int startNodeID, struct colorInfo* _result){
+    struct qQueue* Q = InitqQueue();
+    qPushBack(Q, startNodeID);
+    
+    int* nodeColorArr = (int*)calloc(_csr->csrVSize - 1, sizeof(int));
+    
+    int curNode = -1;
+    int neighbor = -1;
+    int* candidateColorArr = (int*)calloc(_csr->csrVSize - 1, sizeof(int));
+
+    while(!qIsEmpty(Q)){
+        curNode = qPopFront(Q);
+
+        for(int neighborIndex = 0 ; neighborIndex < _csr->csrV[curNode + 1] - _csr->csrV[curNode] ; neighborIndex ++){
+            neighbor = _csr->csrE[_csr->csrV[curNode] + neighborIndex];
+            if(nodeColorArr[neighbor] == 0){
+                qPushBack(Q, neighbor);
+            }
+        }
+    }
+}
+
 // First fit with {degree 1 folding and priority queue for colors}
 void FFDP(struct CSR* _csr, struct colorInfo* _result){
     degreeOneFolding(_csr);

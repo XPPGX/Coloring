@@ -33,6 +33,7 @@ struct CSR{
     struct qQueue* degreeOneNodesQ; //紀錄誰是degreeOne的Queue。
     int foldedDegreeOneCount;
     int startAtZero;
+    int maxDegree; //紀錄最大degree是多少
 };
 
 struct CSR* createCSR(struct Graph* _adjlist);

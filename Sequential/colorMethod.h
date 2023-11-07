@@ -33,10 +33,16 @@ struct colorInfo{
     int NodeNum; //總node數
 };
 
+
 /**
  * @brief 普通的Firstfit
 */
 void Firstfit(struct CSR* _csr, struct colorInfo* _result);
+
+/**
+ * @brief BFS-like FF
+*/
+void BFS_FF(struct CSR* _csr, int startNodeID, struct colorInfo* _result);
 
 /**
  * @brief Firstfit + 摺疊degree 1 + PriorityQueue

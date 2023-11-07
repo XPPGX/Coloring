@@ -28,6 +28,8 @@ struct CSR* createCSR(struct Graph* _adjlist){
     }
     CSR_E = (int*)malloc(sizeof(int) * _adjlist->edgeNum * 2);
     int indexCount = -1;
+
+    int maxDegree = 0;
     // printf("nodeID = %d, tempNodeNum = %d, indexCount = %d\n", nodeID, tempNodeNum, indexCount);
     for(; nodeID < tempNodeNum - 1 ; nodeID ++){
         CSR_V[nodeID] = indexCount + 1;
@@ -35,10 +37,13 @@ struct CSR* createCSR(struct Graph* _adjlist){
         #ifdef _DEBUG_
         printf("CSR_V[%d] = %d\n", nodeID, CSR_V[nodeID]);
         #endif
-        
-        for(int neighborIndex = 0 ; neighborIndex <= _adjlist->vertices[nodeID].neighbors->tail ; neighborIndex ++){
+        int neighborIndex;
+        for(neighborIndex = 0 ; neighborIndex <= _adjlist->vertices[nodeID].neighbors->tail ; neighborIndex ++){
             indexCount ++;
             CSR_E[indexCount] = _adjlist->vertices[nodeID].neighbors->dataArr[neighborIndex];
+        }
+        if(maxDegree < neighborIndex){
+            maxDegree = neighborIndex;
         }
     }
     // printf("nodeID = %d, tempNodeNum = %d, indexCount = %d\n", nodeID, tempNodeNum, indexCount);
@@ -49,12 +54,12 @@ struct CSR* createCSR(struct Graph* _adjlist){
 
     
 
-    csr->csrE = CSR_E;
-    csr->csrVSize = tempNodeNum;
-    csr->csrESize = _adjlist->edgeNum * 2;
-    csr->csrNodesDegree = _adjlist->nodeDegrees;
-    
-    csr->oriCsrNodesDegree = (int*)malloc(sizeof(int) * csr->csrVSize);
+    csr->csrE               = CSR_E;
+    csr->csrVSize           = tempNodeNum;
+    csr->csrESize           = _adjlist->edgeNum * 2;
+    csr->csrNodesDegree     = _adjlist->nodeDegrees;
+    csr->maxDegree          = maxDegree;
+    csr->oriCsrNodesDegree  = (int*)malloc(sizeof(int) * csr->csrVSize);
     memcpy(csr->oriCsrNodesDegree, csr->csrNodesDegree, sizeof(int) * csr->csrVSize);
 
     csr->oriCsrV = (int*)malloc(sizeof(int) * csr->csrVSize);
