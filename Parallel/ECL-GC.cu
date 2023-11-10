@@ -27,6 +27,7 @@ extern "C"{
 #include <cuda_runtime.h>
 
 //define
+// #define _NoUse_
 #define _DEBUG_
 
 //用於紀錄CSRInfo
@@ -89,9 +90,19 @@ void ECL_GC_HighDegree_Vertex_Coloring( int* _cudaWorkList, int* _cudaWorkListLe
                                         struct NodeInfo* _cudaNodeInfo, unsigned int* _cudaNodeBitmap, struct CSRInfo* _deviceCsrInfo,
                                         dim3 _block, dim3 _grid);
 
+__device__ void removeNeighborFromDAG_E(int _offsetNow, int _nodeID, int* _cudaDAG_E, struct NodeInfo* _cudaNodeInfo);
+
+__global__ void LowDegreeColoring(  int* _cudaColorArr, int* _cudaDAG_E, struct NodeInfo* _cudaNodeInfo,
+                                    int* _againFlag,    unsigned int* _cudaNodeBitmap, struct CSRInfo* _deviceCsrInfo);
+
+void ECL_GC_LowDegree_Vertex_Coloring(  int* _cudaColorArr, int* _cudaDAG_E,    struct NodeInfo* _cudaNodeInfo,
+                                        unsigned int* _cudaNodeBitmap,          struct CSRInfo* _deviceCsrInfo,  dim3 _block, dim3 _grid);
+
+#ifdef _NoUse_
 __global__ void ECL_GC_InitSub( int _nodeID,            int* _cudaCsrV,     int* _cudaCsrE,
                                 int* _cudaCsrDegree,    int* _cudaDAG_E,    int* _subKernelFlag,
                                 int* _cudaDAG_nodeEndOffset, struct NodeInfo* _cudaDAG_E_Offset);
+#endif
 
 int main(int argc, char* argv[]){
     char* datasetPath   = argv[1];
@@ -127,6 +138,7 @@ int main(int argc, char* argv[]){
     int* cudaDAG_E;                             //[Array]   以CSR的方式紀錄每個node的鄰居，有哪些是比自己更優先的，「offset一開始照舊用csr->CsrV且如果碰到-1則停下，後續則用cudaDAG_V_offset」
     struct NodeInfo* cudaNodeInfo;              //[Array]   紀錄每個node，自己DAG的start offset與end offset，以及當前最好的顏色、可使用的顏色長度。
     unsigned int* cudaNodeBitmap;               //[Array]   紀錄每個node，自己的Bitmap。
+    int* cudaNodeDAG_StartOffset_dyn;            //[Array]   在LowDegree塗色時，每個node的StartOffset會變動。
     //Malloc device memory space for DevicePointer
     cudaMalloc((void**)&cudaCsrV, sizeof(int) * csr->csrVSize);
     cudaMalloc((void**)&cudaCsrE, sizeof(int) * csr->csrESize);
@@ -138,6 +150,7 @@ int main(int argc, char* argv[]){
     cudaMalloc((void**)&cudaDAG_E, sizeof(int) * csr->csrESize);
     cudaMalloc((void**)&cudaNodeInfo, sizeof(NodeInfo) * csr->csrVSize);
     cudaMalloc((void**)&cudaNodeBitmap, sizeof(unsigned int) * colorBitmapIntElementNum);
+    cudaMalloc((void**)&cudaNodeDAG_StartOffset_dyn, sizeof(int) * csr->csrVSize);
     //Copy data from host to device
     printf("[Execution][Copy Data : Host To Device]...\n");
     cudaMemcpy(cudaCsrV, csr->csrV, sizeof(int) * csr->csrVSize, cudaMemcpyHostToDevice);
@@ -153,12 +166,16 @@ int main(int argc, char* argv[]){
 #pragma endregion
 
 #pragma region Algo
+
     ECL_GC_Init(cudaCsrV, cudaCsrE, cudaWorkList, cudaWorkListNowIndex, cudaCsrDegree, cudaColorArr,
                 cudaDAG_E, cudaNodeBitmap, cudaNodeInfo, deviceCsrInfo, block, grid);
 
     ECL_GC_HighDegree_Vertex_Coloring(  cudaWorkList, cudaWorkListNowIndex, cudaColorArr,
                                         cudaDAG_E, cudaNodeInfo, cudaNodeBitmap, deviceCsrInfo,
                                         block, grid);
+    
+    ECL_GC_LowDegree_Vertex_Coloring(cudaColorArr, cudaDAG_E, cudaNodeInfo, cudaNodeBitmap, deviceCsrInfo, block, grid);
+
 #pragma endregion //Algo
     int* hostCsrDegree = (int*)malloc(sizeof(int) * csr->csrVSize);
     cudaMemcpy(hostCsrDegree, cudaCsrDegree, sizeof(int) * csr->csrVSize, cudaMemcpyDeviceToHost);
@@ -199,31 +216,60 @@ int main(int argc, char* argv[]){
         // printf("node[%d].color = %d\n", i, hostColorArr[i]);
         // printf("%d\n", i);
     }
-    //檢查WorkList中
+
+    //檢查WorkList中的顏色是否有衝突
+    printf("[Check]Worklist Color confliction...\n");
     for(int i = 0 ; i < *hostWorkListNowIndex ; i ++){
         int nodeID          = hostWorkList[i];
         int nodeColor       = hostColorArr[nodeID];
         int flag            = 0;
+        if(nodeColor == -1){
+            printf("\t[Error][Node not yet colored] : node[%d].color = %d\n", nodeID, nodeColor);
+            break;
+        }
         for(int neighborIndex = csr->csrV[nodeID] ; neighborIndex < csr->csrV[nodeID + 1] ; neighborIndex ++){
             int neighborID = csr->csrE[neighborIndex];
             int neighborColor = hostColorArr[neighborID];
             if(nodeColor == neighborColor){
-                printf("\n\nnode[%d].color = %d, neighbor[%d].color = %d!!!!!!!!!!!!!!!!!\n\n", nodeID, nodeColor, neighborID, neighborColor);
+                printf("\n\n\t[Error][Neighbors with same color] : node[%d].color = %d, neighbor[%d].color = %d!!!!!!!!!!!!!!!!!\n\n", nodeID, nodeColor, neighborID, neighborColor);
                 flag = 1;
                 break;
             }
         }
         if(flag == 1){break;}
     }
+    printf("[Check]Whole graph color confliction...\n");
+    //檢查整個graph的顏色是否有衝突
+    int maxColorIndex = 0;
+    for(int nodeID = hostCsrInfo.startNodeID ; nodeID <= hostCsrInfo.endNodeID ; nodeID ++){
+        int nodeColor = hostColorArr[nodeID];
+        if(maxColorIndex < nodeColor){maxColorIndex = nodeColor;}
+        int flag = 0;
+        if(nodeColor == -1){
+            printf("\t[Error][Node not yet colored] : node[%d].color = %d\n", nodeID, nodeColor);
+            break;
+        }
+        for(int neighborIndex = csr->csrV[nodeID] ; neighborIndex < csr->csrV[nodeID + 1] ; neighborIndex ++){
+            int neighborID = csr->csrE[neighborIndex];
+            int neighborColor = hostColorArr[neighborID];
+            if(nodeColor == neighborColor){
+                printf("\n\n\t[Error][Neighbors with same color] : node[%d].color = %d, neighbor[%d].color = %d!!!!!!!!!!!!!!!!!\n\n", nodeID, nodeColor, neighborID, neighborColor);
+                flag = 1;
+                break;
+            }
+        }
+        if(flag == 1){break;}
+    }
+
     //亂數
     time_t t;
     srand(time(&t));
     // int arbitraryNode = random() % nodeSize + 1;
+    // checkOneNodeBitmap(hostNodeInfo, csr, hostNodeBitmap, hostDAG_E, arbitraryNode);
     // int arbitraryNode = 104410;
     // int arbitraryNode = 96457; //LiveJournal中，bitmap用量較多的一個node
     // int arbitraryNode = 3984674;
 
-   
     // for(int nodeIter = hostCsrInfo.startNodeID ; nodeIter <= hostCsrInfo.endNodeID ; nodeIter ++){
     //     if(hostNodeInfo[nodeIter].possColorBitLength == 34){
     //         arbitraryNode = nodeIter;
@@ -234,29 +280,17 @@ int main(int argc, char* argv[]){
     // int node1 = 553341;
     // int node2 = 1193315;
     // int node3 = 2274;
-    // checkOneNodeBitmap(hostNodeInfo, csr, hostNodeBitmap, hostDAG_E, node1);
-    // checkOneNodeBitmap(hostNodeInfo, csr, hostNodeBitmap, hostDAG_E, node2);
+    // int node4 = 3185;
+    // int node5 = 88444;
+    // int node6 = 3;
+    // int node7 = 34970;
+    // checkOneNodeBitmap(hostNodeInfo, csr, hostNodeBitmap, hostDAG_E, node6);
+    // checkOneNodeBitmap(hostNodeInfo, csr, hostNodeBitmap, hostDAG_E, node7);
     // checkOneNodeBitmap(hostNodeInfo, csr, hostNodeBitmap, hostDAG_E, node3);
-    // printf("[DAG_E  Checking] : ");
-    // printf("node[%d] = {", arbitraryNode);
-    // for(int offset = hostNodeInfo[arbitraryNode].nodeStartOffset ; offset < hostNodeInfo[arbitraryNode].nodeEndOffset ; offset ++){
-    //     printf("%d, ", hostDAG_E[offset]);
-    // }
-    // printf("}\n");
-    // printf("[Bitmap Checking] : node[%d].length = %d", arbitraryNode, hostNodeInfo[arbitraryNode].possColorBitLength);
-    // if(hostNodeInfo[arbitraryNode].possColorBitLength == 0)
-    //     printf(", degree = %d\n", csr->csrNodesDegree[arbitraryNode]);
-    // else
-    //     printf("\n");
-    // printf("node[%d] = {", arbitraryNode);
-    // for(int intIter = 0 ; intIter < ((csr->maxDegree + 32) / 32) ; intIter ++){
-    //     printf("%u, ", hostNodeBitmap[hostNodeInfo[arbitraryNode].bitmapStartOffset + intIter]);
-    // }
-    // printf("}\n");
 
     printf("\nWorkListNowIndex = %u, HostCount = %d\n", *hostWorkListNowIndex, count);
+    printf("Total used Color = %d\n", maxColorIndex);
     #endif
-    
 }
 
 
@@ -307,7 +341,7 @@ void checkOneNodeBitmap(struct NodeInfo* _hostNodeInfo, struct CSR* _csr, unsign
         printf("\n");
     printf("node[%d] = {", _nodeID);
     for(int intIter = 0 ; intIter < ((_csr->maxDegree + 32) / 32) ; intIter ++){
-        printf("%u, ", _hostNodeBitmap[_hostNodeInfo[_nodeID].bitmapStartOffset + intIter]);
+        printf("%x, ", _hostNodeBitmap[_hostNodeInfo[_nodeID].bitmapStartOffset + intIter]);
     }
     printf("}\n\n");
 }
@@ -528,6 +562,8 @@ __device__ int bitmapGetWorstColor( int _nodeID, unsigned int* _cudaNodeBitmap, 
     return worstColor;
 }
 
+#pragma region ECL_GC_High_Degree_Node_Coloring
+
 __global__ void HighDegreeColoring( int* _cudaWorkList, int* _cudaWorkListLength, int* _cudaColorArr, int* _cudaDAG_E, struct NodeInfo* _cudaNodeInfo,
                                     int* _againFlag,    unsigned int* _cudaNodeBitmap, struct CSRInfo* _deviceCsrInfo)
 {
@@ -539,8 +575,6 @@ __global__ void HighDegreeColoring( int* _cudaWorkList, int* _cudaWorkListLength
     // }
     if(tid < *_cudaWorkListLength){
         int nodeID = _cudaWorkList[tid];
-        if(nodeID == 3976); //bug 有可能會塗到相同顏色
-        if(nodeID == 3650); //bug 有可能會塗到相同顏色
         if(_cudaColorArr[nodeID] == -1){    //如果node還沒塗色
             shortcut    = 1;
             done        = 1;
@@ -581,9 +615,9 @@ __global__ void HighDegreeColoring( int* _cudaWorkList, int* _cudaWorkListLength
             if(done || shortcut){
                 _cudaColorArr[nodeID]   = nodeBestColor;
                 // _cudaColorArr[nodeID] = _cudaNodeInfo[nodeID].bestColor;
-                // if(nodeID == 553341 || nodeID == 1193315){
-                //     printf("nodeID = %d, nodeBestColor = %d, cudaNodeInfo.bestColor = %d, neighborID = %d, neighborBestColor = %d, neighborWorstColor = %d\n", nodeID, nodeBestColor, _cudaNodeInfo[nodeID].bestColor, neighborID, neighborBestColor, neighborWorstColor);
-                // }
+                if(nodeID == 553341 || nodeID == 1193315){
+                    printf("nodeID = %d, nodeBestColor = %d, cudaNodeInfo.bestColor = %d, neighborID = %d, neighborBestColor = %d, neighborWorstColor = %d\n", nodeID, nodeBestColor, _cudaNodeInfo[nodeID].bestColor, neighborID, neighborBestColor, neighborWorstColor);
+                }
                 // printf("node[%d].colored = %d\n", nodeID, _cudaColorArr[nodeID]);
             }
             else{
@@ -604,7 +638,7 @@ void ECL_GC_HighDegree_Vertex_Coloring( int* _cudaWorkList, int* _cudaWorkListLe
     cudaMalloc((void**)&cudaAgainFlag, sizeof(int));
     cudaMemset(cudaAgainFlag, 0, sizeof(int));
     
-    int ECL_GC_HighDegree_Vertex_Coloring_Count = 0;
+    int loopCounter = 0;
     do
     {
         *hostAgainFlag = 0;
@@ -617,14 +651,117 @@ void ECL_GC_HighDegree_Vertex_Coloring( int* _cudaWorkList, int* _cudaWorkListLe
 
         cudaMemcpy(hostAgainFlag, cudaAgainFlag, sizeof(int), cudaMemcpyDeviceToHost);
 
-        ECL_GC_HighDegree_Vertex_Coloring_Count ++;
+        loopCounter ++;
     } while (*hostAgainFlag == 1);
-    printf("\tcount = %d\n", ECL_GC_HighDegree_Vertex_Coloring_Count);
+    printf("\tcount = %d\n", loopCounter);
     cudaDeviceSynchronize();
 
     printf("[Finish][ECL_GC_HighDegree_Vertex_Coloring]~\n\n");
 }
 
+#pragma endregion //ECL_GC_High_Degree_Node_Coloring
+
+__device__ void removeNeighborFromDAG_E(int _offsetNow, int _nodeID, int* _cudaDAG_E, struct NodeInfo* _cudaNodeInfo){
+    //swap
+    int remainNeighbor      = _cudaDAG_E[_cudaNodeInfo[_nodeID].nodeStartOffset];
+    _cudaDAG_E[_cudaNodeInfo[_nodeID].nodeStartOffset] = _cudaDAG_E[_offsetNow];
+    _cudaDAG_E[_offsetNow]  = remainNeighbor;
+
+    _cudaNodeInfo[_nodeID].nodeStartOffset      ++;
+    _cudaNodeInfo[_nodeID].possColorBitLength   --;
+}
+
+__global__ void LowDegreeColoring(  int* _cudaColorArr, int* _cudaDAG_E, struct NodeInfo* _cudaNodeInfo,
+                                    int* _againFlag,    unsigned int* _cudaNodeBitmap, struct CSRInfo* _deviceCsrInfo)
+{
+    int tid = threadIdx.x + blockIdx.x * blockDim.x;
+    if(_deviceCsrInfo->startNodeID <= tid && tid <= _deviceCsrInfo->endNodeID){
+        int nodeID          = tid;
+        int nodeBestColor   = -1;
+        if(_cudaColorArr[nodeID] == -1){
+            unsigned int Union          = 0x00000000;
+            int nodeRemainDAG_Counter   = _cudaNodeInfo[nodeID].possColorBitLength - 1; //若有node x的DAG_E有兩個neignbor，則node x的possColorBitLength = 3
+            int nodeWorstColor          = -1;
+
+            int neighborID              = -1;
+            int neighborColor           = -1;
+
+//Bug : node的DAG_E的neighbor沒有移除的話，顏色會被扣到光
+            
+            for(int offsetIter = _cudaNodeInfo[nodeID].nodeStartOffset ; offsetIter < _cudaNodeInfo[nodeID].nodeEndOffset ; offsetIter ++){
+                neighborID  = _cudaDAG_E[offsetIter];
+                Union      |= _cudaNodeBitmap[_cudaNodeInfo[neighborID].bitmapStartOffset]; //因為LowDegree node的degree < 32，則node可使用顏色數最多為32，故Union也只需考慮其他neighbor.bitmap的前32個bit就好
+                
+                
+                if(_cudaNodeBitmap[_cudaNodeInfo[nodeID].bitmapStartOffset] & _cudaNodeBitmap[_cudaNodeInfo[neighborID].bitmapStartOffset] == 0x00000000){
+                    nodeRemainDAG_Counter --;
+                    nodeWorstColor      = bitmapGetWorstColor(nodeID, _cudaNodeBitmap, _cudaNodeInfo, _deviceCsrInfo);
+
+                    // if(nodeID == 3185){
+                    //     printf("\tnode[%d].bitmap = %x, neighbor[%d].color = %d\n", nodeID, _cudaNodeBitmap[_cudaNodeInfo[nodeID].bitmapStartOffset], neighborID, _cudaColorArr[neighborID]);
+                    // }
+                    bitmapRemoveOnebit(nodeID, &_cudaNodeBitmap, _cudaNodeInfo, nodeWorstColor, _deviceCsrInfo);
+                    removeNeighborFromDAG_E(offsetIter, nodeID, _cudaDAG_E, _cudaNodeInfo);
+                    // if(nodeID == 34970){
+                    //     printf("\t[Shortcut 2] : node[%d] = {nodeDAG_offset = %d, neighborID = %d, neighborColor = %d}\n", nodeID, _cudaNodeInfo[nodeID].nodeStartOffset, neighborID, _cudaColorArr[neighborID]);
+                    //     // printf("[Shortcut 2] : node[%d] = {DAG_StartOffset = %d, ColorBitmap = %x, neighborID = %d, neighborColor = %d}\n", nodeID, _cudaNodeInfo[nodeID].nodeStartOffset, _cudaNodeBitmap[_cudaNodeInfo[nodeID].bitmapStartOffset], neighborID, neighborColor);
+                    // }
+                }
+                else if(_cudaColorArr[neighborID] != -1){
+                    nodeRemainDAG_Counter --;
+                    neighborColor       = _cudaColorArr[neighborID];
+                    bitmapRemoveOnebit(nodeID, &_cudaNodeBitmap, _cudaNodeInfo, neighborColor, _deviceCsrInfo);
+                    removeNeighborFromDAG_E(offsetIter, nodeID, _cudaDAG_E, _cudaNodeInfo);
+                    // if(nodeID == 34970){
+                    //     printf("\t[Ordinary] : node[%d] = {nodeDAG_offset = %d, neighborID = %d, neighborColor = %d}\n", nodeID, _cudaNodeInfo[nodeID].nodeStartOffset, neighborID, _cudaColorArr[neighborID]);
+                    //     // printf("[Ordinary] : node[%d] = {DAG_StartOffset = %d, ColorBitmap = %x, neighborID = %d, neighborColor = %d}\n", nodeID, _cudaNodeInfo[nodeID].nodeStartOffset, _cudaNodeBitmap[_cudaNodeInfo[nodeID].bitmapStartOffset], neighborID, neighborColor);
+                    // }
+                }
+            }
+
+            nodeBestColor   = bitmapGetBestColor(nodeID, _cudaNodeBitmap, _cudaNodeInfo, _deviceCsrInfo);
+            if((nodeRemainDAG_Counter == 0) || ((Union & (1 << (nodeBestColor - 1)) == 0x00000000))){
+                // if(nodeID == 3 || nodeID == 34970){
+                //     printf("node[%d] = {Union = %x, nodeBestColor = %d, RemainDAG_Counter = %d}\n", nodeID, Union, nodeBestColor, nodeRemainDAG_Counter);
+                // }
+                _cudaColorArr[nodeID]   = nodeBestColor;
+            }
+            else{
+                *_againFlag = 1;
+            }
+        }
+    }
+}
+
+void ECL_GC_LowDegree_Vertex_Coloring(  int* _cudaColorArr, int* _cudaDAG_E,    struct NodeInfo* _cudaNodeInfo,
+                                        unsigned int* _cudaNodeBitmap,          struct CSRInfo* _deviceCsrInfo,  dim3 _block, dim3 _grid)
+{
+    printf("[Execution][ECL_GC_LowDegree_Vertex_Coloring]...\n");
+    int* hostAgainFlag = (int*)malloc(sizeof(int));
+
+    int* cudaAgainFlag;
+    cudaMalloc((void**)&cudaAgainFlag, sizeof(int));
+    cudaMemset(cudaAgainFlag, 0, sizeof(int));
+
+    int loopCounter = 0;
+    do{
+        *hostAgainFlag = 0;
+        cudaMemset(cudaAgainFlag, 0, sizeof(int));
+        /*Low Degree nodes coloring*/
+        LowDegreeColoring<<<_grid, _block>>>(_cudaColorArr, _cudaDAG_E, _cudaNodeInfo, cudaAgainFlag, _cudaNodeBitmap, _deviceCsrInfo);
+        
+        cudaDeviceSynchronize();
+
+        cudaMemcpy(hostAgainFlag, cudaAgainFlag, sizeof(int), cudaMemcpyDeviceToHost);
+        loopCounter ++;
+    }while(*hostAgainFlag == 1);
+    printf("\tLoopCounter = %d\n", loopCounter);
+    cudaDeviceSynchronize();
+
+    printf("[Finish][ECL_GC_LowDegree_Vertex_Coloring]~\n\n");
+}
+
+#ifdef _NoUse_
 __global__ void ECL_GC_InitSub( int _nodeID,            int* _cudaCsrV,     int* _cudaCsrE,
                                 int* _cudaCsrDegree,    int* _cudaDAG_E,    int* _subKernelFlag,
                                 int* _cudaDAG_nodeEndOffset, struct NodeInfo* _cudaDAG_E_Offset)
@@ -673,3 +810,4 @@ __global__ void ECL_GC_InitSub( int _nodeID,            int* _cudaCsrV,     int*
         // *_subKernelFlag = 1;
     }
 }
+#endif
