@@ -1,7 +1,7 @@
 /**
  * @author XPPGX
- * @remark
- * 1. Bitmap 的某些operation還沒搞定            (pend)
+ * @date 2023/11/10
+ * @brief This is an implementation of ECL-GC algorithm, which is a parallel graph coloring
 */
 
 #ifndef COMMON
@@ -29,7 +29,8 @@ extern "C"{
 //define
 // #define _NoUse_
 #define _DEBUG_
-
+#define RECORD_TimeAndQuality
+// #define RECORD_NodeProcessedEachLevel
 //用於紀錄CSRInfo
 struct CSRInfo{
     int startAtZero;
@@ -53,10 +54,13 @@ struct NodeInfo{
     int worstColor;             //[variable]    紀錄當前最差的顏色    
 };
 
+char* getFileNameNoExt(char* _datasetPath);
+char* combinePath(char* _str1, char* _str2);
 int reAssignNodeSize(CSR* _csr);
 CSRInfo getCsrInfo(CSR* _csr, int _nodeSize);
 void checkDevice();
 void checkOneNodeBitmap(struct NodeInfo* _hostNodeInfo, struct CSR* _csr, unsigned int* _hostNodeBitmap, int* _hostDAG_E, int _nodeID);
+
 
 void ECL_GC_Init(   int* _cudaCsrV, int* _cudaCsrE, int* _cudaWorkList,
                     int* _cudaWorkListNowIndex, int* _cudaCsrDegree, int* _cudaColorArr,
@@ -84,7 +88,7 @@ __device__ int bitmapGetWorstColor( int _nodeID, unsigned int* _cudaNodeBitmap, 
                                     struct CSRInfo* _deviceCsrInfo);
 
 __global__ void HighDegreeColoring( int* _cudaWorkList, int* _cudaWorkListLength, int* _cudaColorArr, int* _cudaDAG_E, struct NodeInfo* _cudaNodeInfo,
-                                    int* _againFlag,    unsigned int* _cudaNodeBitmap, struct CSRInfo* _deviceCsrInfo);
+                                    int* _againFlag,    unsigned int* _cudaNodeBitmap, struct CSRInfo* _deviceCsrInfo, int* _nodeProcessedNum);
 
 void ECL_GC_HighDegree_Vertex_Coloring( int* _cudaWorkList, int* _cudaWorkListLength, int* _cudaColorArr, int* _cudaDAG_E,
                                         struct NodeInfo* _cudaNodeInfo, unsigned int* _cudaNodeBitmap, struct CSRInfo* _deviceCsrInfo,
@@ -93,7 +97,7 @@ void ECL_GC_HighDegree_Vertex_Coloring( int* _cudaWorkList, int* _cudaWorkListLe
 __device__ void removeNeighborFromDAG_E(int _offsetNow, int _nodeID, int* _cudaDAG_E, struct NodeInfo* _cudaNodeInfo);
 
 __global__ void LowDegreeColoring(  int* _cudaColorArr, int* _cudaDAG_E, struct NodeInfo* _cudaNodeInfo,
-                                    int* _againFlag,    unsigned int* _cudaNodeBitmap, struct CSRInfo* _deviceCsrInfo);
+                                    int* _againFlag,    unsigned int* _cudaNodeBitmap, struct CSRInfo* _deviceCsrInfo, int* _nodeProcessedNum);
 
 void ECL_GC_LowDegree_Vertex_Coloring(  int* _cudaColorArr, int* _cudaDAG_E,    struct NodeInfo* _cudaNodeInfo,
                                         unsigned int* _cudaNodeBitmap,          struct CSRInfo* _deviceCsrInfo,  dim3 _block, dim3 _grid);
@@ -106,7 +110,9 @@ __global__ void ECL_GC_InitSub( int _nodeID,            int* _cudaCsrV,     int*
 
 int main(int argc, char* argv[]){
     char* datasetPath   = argv[1];
-    
+    char* fileName      = getFileNameNoExt(datasetPath);
+    // printf("FileName = %s\n", fileName);
+
     double time1;
     double time2;
     double readDatasetTime                  = 0;
@@ -203,14 +209,20 @@ int main(int argc, char* argv[]){
     time2 = seconds();
     ECL_GC_LowDegreeColoringTime = time2 - time1;
 #pragma endregion //Algo
-    
+
     time1 = seconds();
     printf("[Execution][Copy Data : Device To Host]...\n");
+
     int* hostColorArr                   = (int*)malloc(sizeof(int) * csr->csrVSize);
+    int* hostWorkListNowIndex           = (int*)malloc(sizeof(int));
+
     cudaMemcpy(hostColorArr, cudaColorArr, sizeof(int) * csr->csrVSize, cudaMemcpyDeviceToHost);
-    printf("[Finish][Copy Data : Device To Host]~\n");
+    cudaMemcpy(hostWorkListNowIndex, cudaWorkListNowIndex, sizeof(int), cudaMemcpyDeviceToHost);
+
+    printf("[Finish][Copy Data : Device To Host]~\n\n");
     time2 = seconds();
     dataCopyFromDeviceToHost = time2 - time1;
+
     //檢查整個graph的顏色是否有衝突
     printf("[Check]Whole graph color confliction...\n");
     int maxColorIndex = 0;
@@ -235,6 +247,7 @@ int main(int argc, char* argv[]){
     }
     printf("[Finish][Copy Data : Device To Host]~\n");
     
+    #ifdef RECORD_TimeAndQuality
     printf("====================Result===================\n");
     printf("[Time][ReadDataset]                     : %6f\n", readDatasetTime);
     printf("[Time][DataCopy HostToDevice]           : %6f\n", dataCopyFromHostToDeviceTime);
@@ -242,7 +255,23 @@ int main(int argc, char* argv[]){
     printf("[Time][ECL_GC_HighDegreeColoringTime]   : %6f\n", ECL_GC_HighDegreeColoringTime);
     printf("[Time][ECL_GC_LowDegreeColoringTime]    : %6f\n", ECL_GC_LowDegreeColoringTime);
     printf("[Time][dataCopyFromDeviceToHost]        : %6f\n", dataCopyFromDeviceToHost);
+
+    printf("WorkListLength   = %d\n", *hostWorkListNowIndex);
     printf("Total used Color = %d\n", maxColorIndex);
+
+
+    char* OutputFileName = combinePath(fileName, "_Metrics.csv");
+    FILE *fptr = fopen(OutputFileName, "a");
+    if(fptr == NULL){
+        printf("[Error] OpenFile : TimeAndQuality.csv\n");
+        exit(1);
+    }
+    fprintf(fptr, "%f,%f,%f,%f,%f,%f,%d,%d\n",
+            readDatasetTime,    dataCopyFromHostToDeviceTime,   ECL_GC_InitTime,
+            ECL_GC_HighDegreeColoringTime,  ECL_GC_LowDegreeColoringTime,   dataCopyFromDeviceToHost,
+            *hostWorkListNowIndex,  maxColorIndex);
+    fclose(fptr);
+    #endif
 
     // int* hostCsrDegree = (int*)malloc(sizeof(int) * csr->csrVSize);
     // cudaMemcpy(hostCsrDegree, cudaCsrDegree, sizeof(int) * csr->csrVSize, cudaMemcpyDeviceToHost);
@@ -343,6 +372,37 @@ int main(int argc, char* argv[]){
     // #endif
 }
 
+char* getFileNameNoExt(char* _datasetPath){
+    char* fileNameWithoutExt = (char*)malloc(sizeof(char) * 256);
+
+    char* fileNameStart = strrchr(_datasetPath, '/');
+    if(fileNameStart != NULL){
+        fileNameStart++;
+    }
+    else{
+        fileNameStart = _datasetPath;
+    }
+
+    char* dot = strrchr(fileNameStart, '.');
+    if(dot != NULL){
+        strncpy(fileNameWithoutExt, fileNameStart, dot - fileNameStart);
+        fileNameWithoutExt[dot - fileNameStart] = '\0';
+        // printf("File without ext : %s\n", fileNameWithoutExt);
+    }
+    else{
+        // printf("File has no ext : %s\n", fileNameStart);
+    }
+    return fileNameWithoutExt;
+}
+
+char* combinePath(char* _str1, char* _str2){
+    size_t fullPathLen = strlen(_str1) + strlen(_str2) + 1;
+    char* fullPath = (char*)malloc(sizeof(char) * fullPathLen);
+    strcpy(fullPath, _str1);
+    strcat(fullPath, _str2);
+    printf("Full path : %s\n", fullPath);
+    return fullPath;
+}
 
 int reAssignNodeSize(CSR* _csr){
     int nodeSize = 0;
@@ -605,7 +665,7 @@ __device__ int bitmapGetWorstColor( int _nodeID, unsigned int* _cudaNodeBitmap, 
 #pragma region ECL_GC_High_Degree_Node_Coloring
 
 __global__ void HighDegreeColoring( int* _cudaWorkList, int* _cudaWorkListLength, int* _cudaColorArr, int* _cudaDAG_E, struct NodeInfo* _cudaNodeInfo,
-                                    int* _againFlag,    unsigned int* _cudaNodeBitmap, struct CSRInfo* _deviceCsrInfo)
+                                    int* _againFlag,    unsigned int* _cudaNodeBitmap, struct CSRInfo* _deviceCsrInfo, int* _nodeProcessedNum)
 {
     int tid         = threadIdx.x + blockIdx.x * blockDim.x;
     int shortcut    = 0;    //紀錄是否可用shortcut，如果shortcut = 1則代表可用shortcut
@@ -654,6 +714,10 @@ __global__ void HighDegreeColoring( int* _cudaWorkList, int* _cudaWorkListLength
 
             if(done || shortcut){
                 _cudaColorArr[nodeID]   = nodeBestColor;
+
+                #ifdef RECORD_NodeProcessedEachLevel
+                int temp = atomicAdd(_nodeProcessedNum, 1);
+                #endif
                 // _cudaColorArr[nodeID] = _cudaNodeInfo[nodeID].bestColor;
                 // if(nodeID == 553341 || nodeID == 1193315){
                 //     printf("nodeID = %d, nodeBestColor = %d, cudaNodeInfo.bestColor = %d, neighborID = %d, neighborBestColor = %d, neighborWorstColor = %d\n", nodeID, nodeBestColor, _cudaNodeInfo[nodeID].bestColor, neighborID, neighborBestColor, neighborWorstColor);
@@ -672,29 +736,57 @@ void ECL_GC_HighDegree_Vertex_Coloring( int* _cudaWorkList, int* _cudaWorkListLe
                                         dim3 _block, dim3 _grid)
 {
     printf("[Execution][ECL_GC_HighDegree_Vertex_Coloring]...\n");
-    int* hostAgainFlag = (int*)malloc(sizeof(int));
+    int* hostAgainFlag          = (int*)malloc(sizeof(int));
+    int* hostNodeProcessedNum   = (int*)malloc(sizeof(int));
 
     int* cudaAgainFlag;
+    int* cudaNodeProcessedNum;
     cudaMalloc((void**)&cudaAgainFlag, sizeof(int));
+    cudaMalloc((void**)&cudaNodeProcessedNum, sizeof(int));
+    cudaMemset(cudaNodeProcessedNum, 0, sizeof(int));
     cudaMemset(cudaAgainFlag, 0, sizeof(int));
+
+    #ifdef RECORD_NodeProcessedEachLevel
+    FILE *fptr = fopen("HD_Nodes_Each_Level.csv", "w");
+    if(fptr == NULL){
+        printf("[Error] OpenFile : HD_Nodes_Each_Level.csv\n");
+        exit(1);
+    }
+    #endif
     
-    int loopCounter = 0;
+    int loopCounter             = 0;
     do
     {
-        *hostAgainFlag = 0;
+        *hostAgainFlag          = 0;
         cudaMemset(cudaAgainFlag, 0, sizeof(int));
+
+        #ifdef RECORD_NodeProcessedEachLevel
+        *hostNodeProcessedNum   = 0;
+        cudaMemset(cudaNodeProcessedNum, 0, sizeof(int));
+        #endif
 
         HighDegreeColoring<<<_grid, _block>>>(  _cudaWorkList, _cudaWorkListLength, _cudaColorArr,
                                                 _cudaDAG_E, _cudaNodeInfo, cudaAgainFlag, 
-                                                _cudaNodeBitmap, _deviceCsrInfo);
+                                                _cudaNodeBitmap, _deviceCsrInfo, cudaNodeProcessedNum);
         cudaDeviceSynchronize();
 
         cudaMemcpy(hostAgainFlag, cudaAgainFlag, sizeof(int), cudaMemcpyDeviceToHost);
 
         loopCounter ++;
+
+        #ifdef RECORD_NodeProcessedEachLevel
+        cudaMemcpy(hostNodeProcessedNum, cudaNodeProcessedNum, sizeof(int), cudaMemcpyDeviceToHost);
+        printf("\tLoop[%d].nodeProcessedNum = %d\n", loopCounter, *hostNodeProcessedNum);
+        fprintf(fptr, "%d,%d\n", loopCounter, *hostNodeProcessedNum);
+        #endif
+
     } while (*hostAgainFlag == 1);
     printf("\tLoopCounter = %d\n", loopCounter);
     cudaDeviceSynchronize();
+
+    #ifdef RECORD_NodeProcessedEachLevel
+    fclose(fptr);
+    #endif
 
     printf("[Finish][ECL_GC_HighDegree_Vertex_Coloring]~\n\n");
 }
@@ -714,7 +806,7 @@ __device__ void removeNeighborFromDAG_E(int _offsetNow, int _nodeID, int* _cudaD
 #pragma region ECL_GC_Low_Degree_Node_Coloring
 
 __global__ void LowDegreeColoring(  int* _cudaColorArr, int* _cudaDAG_E, struct NodeInfo* _cudaNodeInfo,
-                                    int* _againFlag,    unsigned int* _cudaNodeBitmap, struct CSRInfo* _deviceCsrInfo)
+                                    int* _againFlag,    unsigned int* _cudaNodeBitmap, struct CSRInfo* _deviceCsrInfo, int* _nodeProcessedNum)
 {
     int tid = threadIdx.x + blockIdx.x * blockDim.x;
     if(_deviceCsrInfo->startNodeID <= tid && tid <= _deviceCsrInfo->endNodeID){
@@ -761,10 +853,12 @@ __global__ void LowDegreeColoring(  int* _cudaColorArr, int* _cudaDAG_E, struct 
 
             nodeBestColor   = bitmapGetBestColor(nodeID, _cudaNodeBitmap, _cudaNodeInfo, _deviceCsrInfo);
             if((nodeRemainDAG_Counter == 0) || ((Union & (1 << (nodeBestColor - 1)) == 0x00000000))){
-                // if(nodeID == 3 || nodeID == 34970){
-                //     printf("node[%d] = {Union = %x, nodeBestColor = %d, RemainDAG_Counter = %d}\n", nodeID, Union, nodeBestColor, nodeRemainDAG_Counter);
-                // }
+
                 _cudaColorArr[nodeID]   = nodeBestColor;
+
+                #ifdef  RECORD_NodeProcessedEachLevel
+                int temp = atomicAdd(_nodeProcessedNum, 1);
+                #endif
             }
             else{
                 *_againFlag = 1;
@@ -777,26 +871,55 @@ void ECL_GC_LowDegree_Vertex_Coloring(  int* _cudaColorArr, int* _cudaDAG_E,    
                                         unsigned int* _cudaNodeBitmap,          struct CSRInfo* _deviceCsrInfo,  dim3 _block, dim3 _grid)
 {
     printf("[Execution][ECL_GC_LowDegree_Vertex_Coloring]...\n");
-    int* hostAgainFlag = (int*)malloc(sizeof(int));
+    int* hostAgainFlag          = (int*)malloc(sizeof(int));
+    int* hostNodeProcessedNum   = (int*)malloc(sizeof(int));
 
     int* cudaAgainFlag;
+    int* cudaNodeProcessedNum;
     cudaMalloc((void**)&cudaAgainFlag, sizeof(int));
+    cudaMalloc((void**)&cudaNodeProcessedNum, sizeof(int));
     cudaMemset(cudaAgainFlag, 0, sizeof(int));
+    cudaMemset(cudaNodeProcessedNum, 0, sizeof(int));
+
+    #ifdef RECORD_NodeProcessedEachLevel
+    FILE* fptr = fopen("LD_Nodes_Each_Level.csv", "w");
+    if(fptr == NULL){
+        printf("[Error] OpenFile : LD_Nodes_Each_Level.csv\n");
+        exit(1);
+    }
+    #endif
 
     int loopCounter = 0;
     do{
-        *hostAgainFlag = 0;
+        *hostAgainFlag          = 0;
         cudaMemset(cudaAgainFlag, 0, sizeof(int));
 
-        LowDegreeColoring<<<_grid, _block>>>(_cudaColorArr, _cudaDAG_E, _cudaNodeInfo, cudaAgainFlag, _cudaNodeBitmap, _deviceCsrInfo);
+        #ifdef RECORD_NodeProcessedEachLevel
+        *hostNodeProcessedNum   = 0;
+        cudaMemset(cudaNodeProcessedNum, 0, sizeof(int));
+        #endif
+        LowDegreeColoring<<<_grid, _block>>>(_cudaColorArr, _cudaDAG_E, _cudaNodeInfo, cudaAgainFlag, _cudaNodeBitmap, _deviceCsrInfo, cudaNodeProcessedNum);
         
         cudaDeviceSynchronize();
 
         cudaMemcpy(hostAgainFlag, cudaAgainFlag, sizeof(int), cudaMemcpyDeviceToHost);
+
         loopCounter ++;
+
+        #ifdef RECORD_NodeProcessedEachLevel
+        cudaMemcpy(hostNodeProcessedNum, cudaNodeProcessedNum, sizeof(int), cudaMemcpyDeviceToHost);
+        printf("\tLoop[%d].nodeProcessedNum = %d\n", loopCounter, *hostNodeProcessedNum);
+        fprintf(fptr, "%d,%d\n", loopCounter, *hostNodeProcessedNum);
+        #endif
+
     }while(*hostAgainFlag == 1);
+
     printf("\tLoopCounter = %d\n", loopCounter);
     cudaDeviceSynchronize();
+
+    #ifdef RECORD_NodeProcessedEachLevel
+    fclose(fptr);
+    #endif
 
     printf("[Finish][ECL_GC_LowDegree_Vertex_Coloring]~\n\n");
 }
