@@ -30,7 +30,10 @@ extern "C"{
 // #define _NoUse_
 #define _DEBUG_
 #define RECORD_TimeAndQuality
-// #define RECORD_NodeProcessedEachLevel
+
+#ifndef RECORD_TimeAndQuality
+#define RECORD_NodeProcessedEachLevel
+#endif
 //用於紀錄CSRInfo
 struct CSRInfo{
     int startAtZero;
@@ -120,7 +123,7 @@ int main(int argc, char* argv[]){
     double ECL_GC_InitTime                  = 0;
     double ECL_GC_HighDegreeColoringTime    = 0;
     double ECL_GC_LowDegreeColoringTime     = 0;
-    double dataCopyFromDeviceToHost         = 0;
+    double dataCopyFromDeviceToHostTime     = 0;
 #pragma region readDataset
     time1 = seconds();
 
@@ -221,10 +224,10 @@ int main(int argc, char* argv[]){
 
     printf("[Finish][Copy Data : Device To Host]~\n\n");
     time2 = seconds();
-    dataCopyFromDeviceToHost = time2 - time1;
+    dataCopyFromDeviceToHostTime = time2 - time1;
 
     //檢查整個graph的顏色是否有衝突
-    printf("[Check]Whole graph color confliction...\n");
+    printf("[Check Ans]Whole graph color confliction...\n");
     int maxColorIndex = 0;
     for(int nodeID = hostCsrInfo.startNodeID ; nodeID <= hostCsrInfo.endNodeID ; nodeID ++){
         int nodeColor = hostColorArr[nodeID];
@@ -243,9 +246,11 @@ int main(int argc, char* argv[]){
                 break;
             }
         }
-        if(flag == 1){break;}
+        if(flag == 1){
+            exit(1);
+        }
     }
-    printf("[Finish][Copy Data : Device To Host]~\n");
+    printf("[Check Ans][OK]\n");
     
     #ifdef RECORD_TimeAndQuality
     printf("====================Result===================\n");
@@ -254,7 +259,7 @@ int main(int argc, char* argv[]){
     printf("[Time][ECL_GC_InitTime]                 : %6f\n", ECL_GC_InitTime);
     printf("[Time][ECL_GC_HighDegreeColoringTime]   : %6f\n", ECL_GC_HighDegreeColoringTime);
     printf("[Time][ECL_GC_LowDegreeColoringTime]    : %6f\n", ECL_GC_LowDegreeColoringTime);
-    printf("[Time][dataCopyFromDeviceToHost]        : %6f\n", dataCopyFromDeviceToHost);
+    printf("[Time][dataCopyFromDeviceToHostTime]    : %6f\n", dataCopyFromDeviceToHostTime);
 
     printf("WorkListLength   = %d\n", *hostWorkListNowIndex);
     printf("Total used Color = %d\n", maxColorIndex);
@@ -268,7 +273,7 @@ int main(int argc, char* argv[]){
     }
     fprintf(fptr, "%f,%f,%f,%f,%f,%f,%d,%d\n",
             readDatasetTime,    dataCopyFromHostToDeviceTime,   ECL_GC_InitTime,
-            ECL_GC_HighDegreeColoringTime,  ECL_GC_LowDegreeColoringTime,   dataCopyFromDeviceToHost,
+            ECL_GC_HighDegreeColoringTime,  ECL_GC_LowDegreeColoringTime,   dataCopyFromDeviceToHostTime,
             *hostWorkListNowIndex,  maxColorIndex);
     fclose(fptr);
     #endif
